@@ -24,10 +24,9 @@ def decode_waypoints(vlm_output):
         list_string_cleaned = list_string.strip()
 
         try:
-            # 3. Safely convert the string to a list
             waypoints_list = ast.literal_eval(list_string_cleaned)
             
-            print("✅ Successfully extracted and converted list:")
+            print("Successfully extracted list:")
             print(waypoints_list)
             print(f"\nData type: {type(waypoints_list)}")
             return waypoints_list
@@ -41,9 +40,9 @@ def decode_waypoints(vlm_output):
 if True:
     model, tokenizer = FastVisionModel.from_pretrained(
         model_name = "/home/lz457/zhoulab/vlm-ad/vl-finetuning/scripts/outputs/checkpoint-104",#unsloth/Qwen2.5-VL-7B-Instruct-bnb-4bit", # YOUR MODEL YOU USED FOR TRAINING
-        load_in_4bit = True, # Set to False for 16bit LoRA
+        load_in_4bit = True, 
     )
-    FastVisionModel.for_inference(model) # Enable for inference!
+    FastVisionModel.for_inference(model) 
 
 try:
     dataset = load_dataset("json", data_files="/home/lz457/zhoulab/vlm-ad/vl-finetuning/annotated_data/annotated_data.jsonl", split="train")
@@ -55,7 +54,7 @@ except FileNotFoundError:
     print("="*80)
     exit()
 
-# --- Function to load images from paths ---
+# Function to load images from paths
 def load_image(example):
     try:
         image = Image.open(IMAGE_ROOT+example["file_name"]).convert("RGB")
@@ -75,9 +74,7 @@ dataset = dataset.map(load_image, remove_columns=["file_name"])
 dataset = dataset.filter(lambda example: example["image"] is not None)
 
 def create_optimized_prompt():
-    """
-    Creates a shorter, more direct prompt for better and consistent performance.
-    """
+
     return (
         "You are an AI autonomous driving assistant. The vehicle is following its planned path. Based on the Birds-Eye-View image, determine a safe action following the road with overall navigation goal in mind. DISREGARD THE EGO's ANGULAR VELOCITY. You may slow down or stop as needed, especially at red lights and to avoid hitting other vehicles. "
         "The ego-vehicle is the red car at (0, 0). Based on the vehicle velocity and yaw, consider the current path of the vehicle, and decide the next action with that path in mind; consider this with the context of the navigation goal and the image scene.."
@@ -129,12 +126,8 @@ generated_ids = model.generate(
     min_p=0.1
 )
 
-# 3. Decode the generated IDs into a string
-# We use [0] because generate returns a batch, and we want the first result.
-# We also skip the prompt part of the tokens to get only the new generation.
+# Test that ouptut is working properly
 llm_output_string = tokenizer.decode(generated_ids[0][inputs.input_ids.shape[1]:], skip_special_tokens=True)
-
-
 print(llm_output_string)
 wp_list = decode_waypoints(llm_output_string)
 print(wp_list)

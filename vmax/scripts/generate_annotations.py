@@ -8,16 +8,10 @@ from transformers import AutoProcessor, Qwen2_5_VLForConditionalGeneration
 from qwen_vl_utils import process_vision_info
 
 def load_model_processor(checkpoint_path, flash_attn2=False, cpu_only=False):
-    """
-    Loads the VLM model and processor with all performance optimizations enabled.
-    """
+
     print("Loading model and processor...")
     device_map = 'cpu' if cpu_only else 'auto'
-
-    # Force bfloat16 for high performance on H200/Ampere GPUs
     torch_dtype = torch.bfloat16
-    
-    # Use flash_attention_2 if the flag is passed, otherwise default to sdpa
     attn_implementation = 'flash_attention_2' if flash_attn2 and torch.cuda.is_available() else 'sdpa'
     
     model = Qwen2_5_VLForConditionalGeneration.from_pretrained(
@@ -34,11 +28,6 @@ def load_model_processor(checkpoint_path, flash_attn2=False, cpu_only=False):
     return model, processor
 
 def run_vlm_inference(model, processor, image_path: str, prompt: str, scene_desc: str):
-    """
-    Runs inference on an image file path and a prompt.
-    This version lets the library handle image loading.
-    """
-    # Create the messages payload using the file path
     messages = [
         {"role": "user", "content": [
             {'type': 'image', 'image': f'file://{image_path}'},
@@ -46,7 +35,7 @@ def run_vlm_inference(model, processor, image_path: str, prompt: str, scene_desc
         ]}
     ]
     
-    # Use the library's utilities to process the payload
+
     text = processor.apply_chat_template(messages, tokenize=False, add_generation_prompt=True)
     image_inputs, _ = process_vision_info(messages)
     
@@ -68,9 +57,7 @@ def run_vlm_inference(model, processor, image_path: str, prompt: str, scene_desc
     return response.strip()
 
 def create_optimized_prompt():
-    """
-    Creates a shorter, more direct prompt for better and consistent performance.
-    """
+
     # return (
     #       "You are an AI autonomous driving assistant. The vehicle is following its planned path. Based on the Birds-Eye-View image, determine a safe action following the road with overall navigation goal in mind. DISREGARD THE EGO's ANGULAR VELOCITY. You may slow down or stop as needed, especially at red lights and to avoid hitting other vehicles. "
     #     "The ego-vehicle is the red car at (0, 0). Based on the vehicle velocity and yaw, consider the current path of the vehicle, and decide the next action with that path in mind; consider this with the context of the navigation goal and the image scene.."
@@ -91,17 +78,16 @@ def create_optimized_prompt():
         "what action should the vehicle take (e.g merge, stop, continue, turn)? What is the vehicle's current heading, direction, and route? Think step by step, and put your thinking in <think></think> tags. Consider the following as additional context:"
     )
 
-def process_all_data(model, processor, args):
-    """
-    Processes all data from the input file, writes results line-by-line to a 
-    JSONL file, and supports resuming from a previous run.
-    """
-    processed_files = set()
-    output_mode = 'w'  # 'w' for write (new file), 'a' for append (resume)
 
-    # --- Resumability Logic ---
+# Get image data and feed proper metadata
+def process_all_data(model, processor, args):
+ 
+    processed_files = set()
+    output_mode = 'w'  
+
+
     if os.path.exists(args.output_file):
-        print(f"⚠️ Output file '{args.output_file}' already exists. Attempting to resume.")
+        print(f"Output file '{args.output_file}' already exists. Attempting to resume.")
         with open(args.output_file, 'r', encoding='utf-8') as f_out:
             for line in f_out:
                 try:
@@ -111,15 +97,13 @@ def process_all_data(model, processor, args):
                 except json.JSONDecodeError:
                     print(f"Warning: Could not decode a line in the existing output file. Skipping line.")
         output_mode = 'a'
-        print(f"✔️ Found {len(processed_files)} previously processed files. Will skip these.")
-    # --- End Resumability Logic ---
+        print(f"Found {len(processed_files)} previously processed files. Will skip these.")
 
-    # Open the output file in the determined mode (write or append)
     with open(args.output_file, output_mode, encoding='utf-8') as f_out:
         with open(args.input_file, 'r', encoding='utf-8') as f_in:
             lines = f_in.readlines()
             
-            # Create the short, optimized prompt once, outside the loop
+
             task_prompt = create_optimized_prompt()
 
             for line in tqdm(lines, desc="Annotating dataset"):
@@ -136,7 +120,7 @@ def process_all_data(model, processor, args):
                     if not relative_path:
                         continue
                     
-                    # --- Resume Check ---
+
                     if relative_path in processed_files:
                         continue  # Skip this file as it's already processed
 
@@ -144,16 +128,15 @@ def process_all_data(model, processor, args):
                     if not os.path.exists(full_image_path):
                         continue
 
-                    # --- Inference ---
+                    # Inference
                     vlm_output = run_vlm_inference(model, processor, full_image_path, task_prompt, "Scene description" + scene_description)
                     
-                    # --- Save Result ---
+                    # Saving
                     original_data['output_reasoning'] = vlm_output
                     print(original_data["file_name"]+"\n")
                     print(vlm_output)
-                    # Write the processed data as a single line in the JSONL file
                     f_out.write(json.dumps(original_data) + '\n')
-                    # Force the write to disk so you can monitor it in real-time
+
                     f_out.flush()
 
                 except Exception as e:
